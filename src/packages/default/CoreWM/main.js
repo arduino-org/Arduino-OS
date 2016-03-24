@@ -57,6 +57,8 @@
     this.importedSettings = importSettings;
 
     this._$notifications    = document.createElement('corewm-notifications');
+    this._$notifications.setAttribute('role', 'log');
+
     document.body.appendChild(this._$notifications);
   };
 
@@ -165,6 +167,8 @@
     if ( !force && kill && !window.confirm(OSjs.Applications.CoreWM._('Killing this process will stop things from working!')) ) {
       return false;
     }
+
+    this.removeNotificationIcon('_HandlerUserNotification');
 
     if ( this.iconView ) {
       this.iconView.destroy();
@@ -351,6 +355,10 @@
         this.iconView.resize(this);
       }
     }
+
+    setTimeout(function() {
+      self.setStyles(self._settings);
+    }, 1000);
   };
 
   CoreWM.prototype.initIconView = function() {
@@ -377,7 +385,7 @@
   // Events
   //
 
-  CoreWM.prototype.resize = function(ev, rect) {
+  CoreWM.prototype.resize = function(ev, rect, wasInited) {
     if ( !this.getSetting('moveOnResize') ) { return; }
 
     var space = this.getWindowSpace();
@@ -413,7 +421,7 @@
       }
 
       // Restore maximized windows (FIXME: Better solution?)
-      if ( iter._state.maximized ) {
+      if ( iter._state.maximized && (wasInited ? iter._restored : true) ) {
         iter._restore(true, false);
       }
     }
@@ -663,6 +671,9 @@
         this._$notifications.style.display = 'block';
       }
 
+      container.setAttribute('aria-label', String(opts.title));
+      container.setAttribute('role', 'alert');
+
       container.className = classNames.join(' ');
       container.onclick = function(ev) {
         _remove();
@@ -874,7 +885,10 @@
   };
 
   CoreWM.prototype.setStyles = function(settings) {
+    /*jshint sub:true*/
     var styles = {};
+    var raw = '';
+
     if ( settings.panels ) {
       settings.panels.forEach(function(p, i) {
         styles['corewm-panel'] = {};
@@ -893,9 +907,25 @@
           styles['corewm-panel']['color'] = p.options.foreground;
           styles['corewm-notification-entry']['color'] = p.options.foreground;
         }
-
       });
     }
+
+    raw += '@media all and (max-width: 800px) {\n';
+    raw += 'application-window {\n';
+
+    var borderSize = 0;
+    var space = this.getWindowSpace(true);
+    var theme = this.getStyleTheme(true);
+    if ( theme && theme.style && theme.style.window ) {
+      borderSize = theme.style.window.border;
+    }
+
+    raw += 'top:' + String(space.top + borderSize) + 'px !important;\n';
+    raw += 'left:' + String(space.left + borderSize) + 'px !important;\n';
+    raw += 'right:' + String(borderSize) + 'px !important;\n';
+    raw += 'bottom:' + String(space.bottom + borderSize) + 'px !important;\n';
+    raw += '\n}';
+    raw += '\n}';
 
     styles['#CoreWMDesktopIconView'] = {};
     if ( settings.invertIconViewColor && settings.backgroundColor ) {
@@ -903,7 +933,7 @@
     }
 
     if ( Object.keys(styles).length ) {
-      this.createStylesheet(styles);
+      this.createStylesheet(styles, raw);
     }
   };
 
@@ -942,6 +972,8 @@
     var s = WindowManager.prototype.getWindowSpace.apply(this, arguments);
     var d = this.getSetting('desktopMargin');
 
+    s.bottom = 0;
+
     this.panels.forEach(function(p) {
       if ( p && p.getOntop() ) {
         var ph = p.getHeight();
@@ -953,6 +985,10 @@
           s.height -= ph;
         } else {
           s.height -= ph;
+        }
+
+        if ( p._options.position === 'bottom' ) {
+          p.bottom += ph;
         }
       }
     });

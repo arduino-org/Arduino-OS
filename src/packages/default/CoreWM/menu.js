@@ -128,7 +128,7 @@
       img.src = _createIcon(iter, a, '32x32');
 
       var txt = document.createElement('div');
-      txt.appendChild(document.createTextNode(iter.name.replace(/([^\s-]{6})([^\s-]{6})/, '$1-$2')));
+      txt.appendChild(document.createTextNode(iter.name)); //.replace(/([^\s-]{8})([^\s-]{8})/, '$1-$2')));
 
       Utils.$bind(entry, 'mousedown', function(ev) {
         ev.stopPropagation();
@@ -192,23 +192,6 @@
   function doShowMenu(ev) {
     var wm = OSjs.Core.getWindowManager();
 
-    function isTouchDevice() {
-      if ( 'ontouchstart' in document.documentElement ) {
-        return true;
-      }
-      try {
-        if ( document.createEvent('TouchEvent') ) {
-          return true;
-        }
-      } catch ( e ) {}
-
-      var el = document.createElement('div');
-      el.setAttribute('ongesturestart', 'return;'); // or try 'ontouchstart'
-      return typeof el.ongesturestart === 'function';
-    }
-
-    //if ( isTouchDevice() || (wm && wm.getSetting('useTouchMenu') === true) ) {
-    //FIXME
     if ( (wm && wm.getSetting('useTouchMenu') === true) ) {
       var inst = new ApplicationMenu();
       var pos = {x: ev.clientX, y: ev.clientY};

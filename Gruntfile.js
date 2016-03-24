@@ -38,6 +38,8 @@
 
   module.exports = function(grunt) {
 
+    grunt.file.defaultEncoding = 'utf-8';
+
     //
     // Load plugins
     //
@@ -45,15 +47,28 @@
       require('time-grunt')(grunt);
     } catch (e) { }
 
-    grunt.file.defaultEncoding = 'utf-8';
+    // Make sure we only load required modules (ignore warnings)
+    var checks = ['test', 'jshint', 'jscs', 'csslint', 'xml_validator', 'mochaTest'];
+    checks.forEach(function(k) {
+      if ( grunt.cli.tasks.indexOf(k) >= 0 ) {
+        grunt.loadNpmTasks('grunt-contrib-jshint');
+        grunt.loadNpmTasks('grunt-mocha-test');
+        //grunt.loadNpmTasks('grunt-mocha');
+        grunt.loadNpmTasks('grunt-jscs');
+        grunt.loadNpmTasks('grunt-contrib-csslint');
+        grunt.loadNpmTasks('grunt-xml-validator');
+        return false;
+      }
+      return true;
+    });
 
-    grunt.loadNpmTasks('grunt-contrib-jshint');
-    grunt.loadNpmTasks('grunt-mocha-test');
-    //grunt.loadNpmTasks('grunt-mocha');
-    grunt.loadNpmTasks('grunt-contrib-watch');
-    grunt.loadNpmTasks('grunt-jscs');
-    grunt.loadNpmTasks('grunt-contrib-csslint');
-    grunt.loadNpmTasks('grunt-nw-builder');
+    if ( grunt.cli.tasks.indexOf('nw') >= 0 ) {
+      grunt.loadNpmTasks('grunt-nw-builder');
+    }
+
+    if ( grunt.cli.tasks.indexOf('watch') >= 0 ) {
+      grunt.loadNpmTasks('grunt-contrib-watch');
+    }
 
     //
     // Load tasks
@@ -74,8 +89,7 @@
           'src/packages/default/**/*.js',
           '!src/packages/default/Broadway/**',
           '!src/packages/default/**/locales.js',
-          '!src/packages/default/**/locale.js',
-          '!src/packages/default/Calculator/main.js'
+          '!src/packages/default/**/locale.js'
         ]
       },
       csslint: {
@@ -140,7 +154,7 @@
             'src/client/themes/styles/*/metadata.json',
             'src/client/themes/sounds/*/metadata.json',
             'src/client/themes/icons/*/metadata.json',
-            'src/packages/*/*/package.json'
+            'src/packages/*/*/metadata.json'
           ],
           tasks: ['config', 'manifest']
         }
@@ -155,14 +169,21 @@
           'src/client/javascript/*.js',
           'src/client/javascript/**/*.js',
           'src/packages/default/**/*.js',
-          '!src/packages/default/Broadway/**',
-          '!src/packages/default/Calculator/main.js'
+          '!src/packages/default/Broadway/**'
         ],
         options: {
           config: '.jscsrc',
           verbose: true,
           fix: false,
           requireCurlyBraces: ['if']
+        }
+      },
+      xml_validator: {
+        all: {
+          src: [
+            'src/client/dialogs.html',
+            'src/packages/default/*/scheme.html'
+          ]
         }
       },
       nwjs: {
@@ -281,6 +302,11 @@
       _build.createPackage(grunt, arg1, arg2);
     });
 
+    grunt.registerTask('create-handler', 'Create a new handler with given name', function(arg1, arg2) {
+      grunt.log.writeln('Creating handler...');
+      _build.createHandler(grunt, arg1);
+    });
+
     //
     // Register aliases
     //
@@ -290,7 +316,7 @@
     grunt.registerTask('nw', ['config', 'core:nw', 'themes', 'packages', 'manifest', 'standalone:nw', 'nwjs']);
     grunt.registerTask('dist', ['config', 'dist-files:dist', 'core', 'themes', 'packages', 'manifest']);
     grunt.registerTask('dist-dev', ['config', 'dist-files:dist-dev', 'themes:fonts', 'themes:styles', 'manifest']);
-    grunt.registerTask('test', ['jshint', 'jscs', 'csslint', 'mochaTest'/*, 'mocha'*/]);
+    grunt.registerTask('test', ['jshint', 'jscs', 'csslint', 'xml_validator', 'mochaTest'/*, 'mocha'*/]);
   };
 
 })(require('node-fs-extra'), require('path'), require('./src/build.js'), require('grunt'), require('less'));

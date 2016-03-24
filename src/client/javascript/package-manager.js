@@ -53,6 +53,7 @@
   function PackageManager() {
     var uri = Utils.checkdir(API.getConfig('Connection.MetadataURI'));
 
+    this.blacklist = [];
     this.packages = {};
     this.uri = uri;
   }
@@ -72,19 +73,60 @@
 
     console.info('PackageManager::load()');
 
-    this._loadMetadata(function(err) {
-      if ( err ) {
-        callback(err);
-        return;
-      }
+    function loadMetadata(cb) {
+      self._loadMetadata(function(err) {
+        if ( err ) {
+          callback(err);
+          return;
+        }
 
-      var len = Object.keys(self.packages).length;
-      if ( len ) {
+        var len = Object.keys(self.packages).length;
+        if ( len ) {
+          cb();
+          return;
+        }
+
+        callback(false, 'No packages found!');
+      });
+    }
+
+    loadMetadata(function() {
+      self._loadExtensions(function() {
         callback(true);
-        return;
-      }
-      callback(false, 'No packages found!');
+      });
     });
+
+  };
+
+  /**
+   * Internal method for loading all extensions
+   *
+   * @param  Function callback      callback
+   *
+   * @return void
+   *
+   * @method PackageManager::_loadExtensions()
+   */
+  PackageManager.prototype._loadExtensions = function(callback) {
+    var packages = this.packages;
+    var preloads = [];
+
+    Object.keys(packages).forEach(function(k) {
+      var iter = packages[k];
+      if ( iter.type === 'extension' && iter.sources ) {
+        iter.sources.forEach(function(p) {
+          preloads.push(p);
+        });
+      }
+    });
+
+    if ( preloads.length ) {
+      Utils.preload(preloads, function(total, failed) {
+        callback();
+      });
+    } else {
+      callback();
+    }
   };
 
   /**
@@ -236,7 +278,7 @@
         if ( resp && (resp instanceof Array) ) {
           resp.forEach(function(iter) {
             if ( !iter.filename.match(/^\./) && iter.type === 'dir' ) {
-              queue.push(Utils.pathJoin(dir.path, iter.filename, 'package.json'));
+              queue.push(Utils.pathJoin(dir.path, iter.filename, 'metadata.json'));
             }
           });
         }
@@ -353,6 +395,19 @@
   };
 
   /**
+   * Sets the package blacklist
+   *
+   * @param   Array       list        List of package names
+   *
+   * @return  vboid
+   *
+   * @method  PackageManager::setBlacklist()
+   */
+  PackageManager.prototype.setBlacklist = function(list) {
+    this.blacklist = list || [];
+  };
+
+  /**
    * Get package by name
    *
    * @param String    name      Package name
@@ -378,19 +433,31 @@
    * @method PackageManager::getPackages()
    */
   PackageManager.prototype.getPackages = function(filtered) {
+    var self = this;
     var hidden = OSjs.Core.getSettingsManager().instance('Packages', {hidden: []}).get('hidden');
+
+    function allowed(i, iter) {
+      if ( self.blacklist.indexOf(i) >= 0 ) {
+        return false;
+      }
+
+      if ( iter && (iter.groups instanceof Array) ) {
+        if ( !API.checkPermission(iter.groups) ) {
+          return false;
+        }
+      }
+
+      return true;
+    }
 
     if ( typeof filtered === 'undefined' || filtered === true ) {
       var pkgs = this.packages;
       var result = {};
       Object.keys(pkgs).forEach(function(name) {
         var iter = pkgs[name];
-        if ( iter && (iter.groups instanceof Array) ) {
-          if ( !API.checkPermission(iter.groups) ) {
-            return;
-          }
+        if ( !allowed(name, iter) ) {
+          return;
         }
-
         if ( iter && hidden.indexOf(name) < 0 ) {
           result[name] = iter;
         }
@@ -413,10 +480,12 @@
     var list = [];
     var self = this;
     Object.keys(this.packages).forEach(function(i) {
-      var a = self.packages[i];
-      if ( a && a.mime ) {
-        if ( Utils.checkAcceptMime(mime, a.mime) ) {
-          list.push(i);
+      if ( self.blacklist.indexOf(i) < 0 ) {
+        var a = self.packages[i];
+        if ( a && a.mime ) {
+          if ( Utils.checkAcceptMime(mime, a.mime) ) {
+            list.push(i);
+          }
         }
       }
     });

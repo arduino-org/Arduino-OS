@@ -252,6 +252,11 @@
       CurrentLocale = DefaultLocale;
     }
 
+    var html = document.querySelector('html');
+    if ( html ) {
+      html.setAttribute('lang', l);
+    }
+
     console.log('doSetLocale()', CurrentLocale);
   }
 
@@ -268,15 +273,22 @@
    * @param   Function  callback  Callback function => fn(error, response)
    *
    * @return  void
-   * @link    http://os.js.org/doc/tutorials/using-curl.html
-   * @link    http://os.js.org/doc/server/srcservernodenode_modulesosjsapijs.html#api-curl
+   * @link    https://os.js.org/doc/tutorials/using-curl.html
+   * @link    https://os.js.org/doc/server/srcservernodenode_modulesosjsapijs.html#api-curl
    * @api     OSjs.API.curl()
    */
   function doCurl(args, callback) {
     args = args || {};
     callback = callback || {};
 
-    doAPICall('curl', args.body, function(response) {
+    var opts = args.body;
+    if ( typeof opts === 'object' ) {
+      console.warn('DEPRECATION WARNING', 'The \'body\' wrapper is no longer needed');
+    } else {
+      opts = args;
+    }
+
+    doAPICall('curl', opts, function(response) {
       if ( response && response.error ) {
         callback(response.error);
         return;
@@ -308,6 +320,8 @@
    */
   var _CALL_INDEX = 1;
   function doAPICall(m, a, cok, cerror, options) {
+    a = a || {};
+
     var lname = 'APICall_' + _CALL_INDEX;
 
     if ( typeof a.__loading === 'undefined' || a.__loading === true ) {
@@ -438,6 +452,44 @@
   }
 
   /**
+   * Restarts all processes with the given name
+   *
+   * This also reloads any metadata preload items defined in the application.
+   *
+   * @param   String      n               Application Name
+   *
+   * @return  void
+   * @api     OSjs.API.relaunch()
+   */
+  function doReLaunchProcess(n) {
+    function relaunch(p) {
+      var data = null;
+      var args = {};
+      if ( p instanceof OSjs.Core.Application ) {
+        data = p._getSessionData();
+      }
+
+      try {
+        p.destroy(true); // kill
+      } catch ( e ) {
+        console.warn('OSjs.API.relaunch()', e.stack, e);
+      }
+
+      if ( data !== null ) {
+        args = data.args;
+        args.__resume__ = true;
+        args.__windows__ = data.windows || [];
+      }
+
+      args.__preload__ = {force: true};
+
+      OSjs.API.launch(n, args);
+    }
+
+    OSjs.API.getProcess(n).forEach(relaunch);
+  }
+
+  /**
    * Launch a Process
    *
    * @param   String      n               Application Name
@@ -460,55 +512,10 @@
     console.group('doLaunchProcess()', n, arg);
 
     var splash = null;
+    var pargs = {};
     var handler = OSjs.Core.getHandler();
     var packman = OSjs.Core.getPackageManager();
     var compability = OSjs.Utils.getCompability();
-
-    function createLaunchSplash(data, n) {
-      var splash = null;
-      var splashBar = null;
-
-      if ( data.splash === false ) { return; }
-
-      splash = document.createElement('application-splash');
-
-      var icon = document.createElement('img');
-      icon.alt = n;
-      icon.src = OSjs.API.getIcon(data.icon);
-
-      var titleText = document.createElement('b');
-      titleText.appendChild(document.createTextNode(data.name));
-
-      var title = document.createElement('span');
-      title.appendChild(document.createTextNode('Launching '));
-      title.appendChild(titleText);
-      title.appendChild(document.createTextNode('...'));
-
-      splashBar = document.createElement('gui-progress-bar');
-      OSjs.GUI.Elements['gui-progress-bar'].build(splashBar);
-
-      splash.appendChild(icon);
-      splash.appendChild(title);
-      splash.appendChild(splashBar);
-
-      document.body.appendChild(splash);
-
-      return {
-        destroy: function() {
-          OSjs.Utils.$remove(splash);
-          splash = null;
-          splashBar = null;
-        },
-        update: function(p, c) {
-          if ( !splash || !splashBar ) { return; }
-          var per = c ? 0 : 100;
-          if ( c ) {
-            per = (p / c) * 100;
-          }
-          (new OSjs.GUI.Element(splashBar)).set('value', per);
-        }
-      };
-    }
 
     function checkApplicationCompability(comp) {
       var result = [];
@@ -605,11 +612,7 @@
 
       try {
         var settings = OSjs.Core.getSettingsManager().get(a.__pname) || {};
-        a.init(settings, result, function() {
-          setTimeout(function() {
-            _done();
-          }, 100);
-        });
+        a.init(settings, result, function() {}); // NOTE: Empty function is for backward-compability
         onFinished(a, result);
 
         doTriggerHook('onApplicationLaunched', [{
@@ -626,10 +629,7 @@
         _error(OSjs.API._('ERR_APP_INIT_FAILED_FMT', n, ex.toString()), ex);
       }
 
-      // Just in case something goes wrong
-      setTimeout(function() {
-        _done();
-      }, 30 * 1000);
+      _done();
     }
 
     function launch() {
@@ -647,21 +647,19 @@
         return false;
       }
 
+      if ( arg.__preload__ ) {
+        pargs = arg.__preload__;
+        delete arg.__preload__;
+      }
+
       // Preload
       if ( !OSjs.Applications[n] ) {
-        splash = createLaunchSplash(data, n);
+        if ( data.splash !== false ) {
+          splash = OSjs.API.createSplash(data.name, data.icon);
+        }
       }
-      createLoading(n, {className: 'StartupNotification', tooltip: 'Starting ' + n});
 
-      /*
-      if ( window.location.href.match(/^file\:\/\//) ) {
-        data.preload.forEach(function(file, idx) {
-          if ( file.src && file.src.match(/^\//) ) {
-            file.src = file.src.replace(/^\//, '');
-          }
-        });
-      }
-      */
+      createLoading(n, {className: 'StartupNotification', tooltip: 'Starting ' + n});
 
       OSjs.Utils.preload(data.preload, function(total, failed) {
         destroyLoading(n);
@@ -678,7 +676,7 @@
         if ( splash ) {
           splash.update(progress, count);
         }
-      });
+      }, pargs);
 
       return true;
     }
@@ -866,8 +864,6 @@
 
     var map = [
       {match: 'application/pdf', icon: 'mimetypes/gnome-mime-application-pdf.png'},
-      {match: 'osjs/document', icon: 'mimetypes/gnome-mime-application-msword.png'},
-      {match: 'osjs/draw', icon: 'mimetypes/image.png'},
       {match: 'application/zip', icon: 'mimetypes/folder_tar.png'},
       {match: 'application/x-python', icon: 'mimetypes/stock_script.png'},
       {match: 'application/x-lua', icon: 'mimetypes/stock_script.png'},
@@ -875,6 +871,9 @@
       {match: 'text/html', icon: 'mimetypes/stock_script.png'},
       {match: 'text/xml', icon: 'mimetypes/stock_script.png'},
       {match: 'text/css', icon: 'mimetypes/stock_script.png'},
+
+      {match: 'osjs/document', icon: 'mimetypes/gnome-mime-application-msword.png'},
+      {match: 'osjs/draw', icon: 'mimetypes/image.png'},
 
       {match: /^text\//, icon: 'mimetypes/txt.png'},
       {match: /^audio\//, icon: 'mimetypes/sound.png'},
@@ -890,17 +889,19 @@
     } else {
       var mime = file.mime || 'application/octet-stream';
 
-      map.forEach(function(iter) {
+      map.every(function(iter) {
         var match = false;
         if ( typeof iter.match === 'string' ) {
           match = (mime === iter.match);
         } else {
           match = mime.match(iter.match);
         }
+
         if ( match ) {
           icon = iter.icon;
           return false;
         }
+
         return true;
       });
     }
@@ -1094,6 +1095,8 @@
   /**
    * Create a new dialog
    *
+   * You can also pass a function as `className` to return an instance of your own class
+   *
    * @param   String        className       Dialog Namespace Class Name
    * @param   Object        args            Arguments you want to send to dialog
    * @param   Function      callback        Callback on dialog action (close/ok etc) => fn(ev, button, result)
@@ -1121,7 +1124,7 @@
       callback.apply(null, arguments);
     }
 
-    var win = new OSjs.Dialogs[className](args, cb);
+    var win = typeof className === 'string' ? new OSjs.Dialogs[className](args, cb) : className(args, cb);
 
     if ( !parentObj ) {
       var wm = OSjs.Core.getWindowManager();
@@ -1201,7 +1204,11 @@
     }
 
     el.setAttribute('draggable', 'true');
+    el.setAttribute('aria-grabbed', 'false');
+
     el.addEventListener('dragstart', function(ev) {
+      this.setAttribute('aria-grabbed', 'true');
+
       this.style.opacity = '0.4';
       if ( ev.dataTransfer ) {
         _dragStart(ev);
@@ -1210,6 +1217,7 @@
     }, false);
 
     el.addEventListener('dragend', function(ev) {
+      this.setAttribute('aria-grabbed', 'false');
       this.style.opacity = '1.0';
       return args.onEnd(ev, this, args);
     }, false);
@@ -1286,6 +1294,8 @@
 
       return false;
     }
+
+    el.setAttribute('aria-dropeffect', args.effect);
 
     el.addEventListener('drop', function(ev) {
       //Utils.$removeClass(el, 'onDragEnter');
@@ -1372,7 +1382,7 @@
 
     var result = true;
     if ( userGroups.indexOf('admin') < 0 ) {
-      group.forEach(function(g) {
+      group.every(function(g) {
         if ( userGroups.indexOf(g) < 0 ) {
           result = false;
         }
@@ -1380,6 +1390,74 @@
       });
     }
     return result;
+  }
+
+  /**
+   * Checks the given permission (groups) against logged in user
+   *
+   * Returns an object with the methods `update(precentage)` and `destroy()`
+   *
+   * @param   String      name          The name to display
+   * @param   String      icon          The icon to display
+   * @param   String      label         (Optional) The label (default = 'Starting')
+   * @param   DOMElement  parentEl      (Optional) The parent element
+   *
+   * @return  Object
+   *
+   * @api     OSjs.API.createSplash()
+   */
+  function doCreateSplash(name, icon, label, parentEl) {
+    label = label || 'Starting';
+    parentEl = parentEl || document.body;
+
+    var splash = document.createElement('application-splash');
+    splash.setAttribute('role', 'dialog');
+
+    var img;
+    if ( icon ) {
+      img = document.createElement('img');
+      img.alt = name;
+      img.src = OSjs.API.getIcon(icon);
+    }
+
+    var titleText = document.createElement('b');
+    titleText.appendChild(document.createTextNode(name));
+
+    var title = document.createElement('span');
+    title.appendChild(document.createTextNode(label + ' '));
+    title.appendChild(titleText);
+    title.appendChild(document.createTextNode('...'));
+
+    var splashBar = document.createElement('gui-progress-bar');
+    OSjs.GUI.Elements['gui-progress-bar'].build(splashBar);
+
+    if ( img ) {
+      splash.appendChild(img);
+    }
+    splash.appendChild(title);
+    splash.appendChild(splashBar);
+
+    parentEl.appendChild(splash);
+
+    return {
+      destroy: function() {
+        splash = OSjs.Utils.$remove(splash);
+
+        img = null;
+        title = null;
+        titleText = null;
+        splashBar = null;
+      },
+
+      update: function(p, c) {
+        if ( !splash || !splashBar ) { return; }
+        var per = c ? 0 : 100;
+        if ( c ) {
+          per = (p / c) * 100;
+        }
+        (new OSjs.GUI.Element(splashBar)).set('value', per);
+      }
+    };
   }
 
   /////////////////////////////////////////////////////////////////////////////
@@ -1606,6 +1684,7 @@
   OSjs.API.open                   = doLaunchFile;
   OSjs.API.launch                 = doLaunchProcess;
   OSjs.API.launchList             = doLaunchProcessList;
+  OSjs.API.relaunch               = doReLaunchProcess;
 
   OSjs.API.getApplicationResource = doGetApplicationResource;
   OSjs.API.getThemeCSS            = doGetThemeCSS;
@@ -1623,6 +1702,7 @@
   OSjs.API.blurMenu               = function() {}; // gui.js
   OSjs.API.createLoading          = createLoading;
   OSjs.API.destroyLoading         = destroyLoading;
+  OSjs.API.createSplash           = doCreateSplash;
   OSjs.API.createDialog           = doCreateDialog;
   OSjs.API.createNotification     = doCreateNotification;
   OSjs.API.checkPermission        = doCheckPermission;
