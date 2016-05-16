@@ -116,6 +116,10 @@
     this.currentView = view;
     this.currentPackage = null;
 
+    if ( !this._scheme ) {
+      return;
+    }
+
     this._app.callOpkg('list', {category: view}, function(err, result) {
       self.renderView(result);
     });
@@ -123,6 +127,10 @@
 
   ApplicationArduinoPackageManagerWindow.prototype.selectPackage = function(pkg) {
     this.currentPackage = pkg;
+
+    if ( !this._scheme ) {
+      return;
+    }
 
     var buttonInstall = this._scheme.find(this, 'ButtonInstall').set('disabled', true);
     var buttonUpdate = this._scheme.find(this, 'ButtonUpdate').set('disabled', true);
@@ -140,6 +148,10 @@
   };
 
   ApplicationArduinoPackageManagerWindow.prototype.renderView = function(data) {
+    if ( !this._scheme ) {
+      return;
+    }
+
     var packageView = this._scheme.find(this, 'PackageView');
     var rows = [];
 
@@ -243,15 +255,10 @@
   ApplicationArduinoPackageManager.prototype.callAPI = function(fn, args, cb) {
     var win = this._getMainWindow();
     win._toggleLoading(true);
-    API.call(fn, args, function(response) {
+    API.call(fn, args, function(error, result) {
       win._toggleLoading(false);
-      return cb(response.error, response.result);
-    },
-      function(error) {
-        win._toggleLoading(false);
-        alert("Problem || " + error);
-        return cb(error);
-      });
+      return cb(error, result);
+    });
   };
 
   ApplicationArduinoPackageManager.prototype.callOpkg = function(name, args, cb) {
