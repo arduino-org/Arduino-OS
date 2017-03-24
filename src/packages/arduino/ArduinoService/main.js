@@ -196,6 +196,20 @@
     this.externalCall('opkg', {command: 'list', args: {category: 'upgradable'}}, function(err, stdout) {
       var list = (stdout || '').split('\n');
       var found = null;
+     
+        
+      if (list.length > 0 )
+      {
+          var wm = OSjs.Core.getWindowManager();
+          wm.notification({
+              icon: 'actions/stock_new-appointment.png',
+              title: 'Update Notification',
+              message: Utils.format('There are {0} packges upgradable', list.length)
+            });
+
+      }    
+        
+        
       list.forEach(function(line) {
         var data = line.split(' - ');
         if ( data.length === 3 && data[0] === packageName ) {
